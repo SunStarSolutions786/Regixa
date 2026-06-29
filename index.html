@@ -218,11 +218,6 @@ async function deleteDoc(ref){return ref.delete();}
 
 
 
-const FB={apiKey:"AIzaSyBfKnCuJXiIgsJRG8hU42Hd8xSW6os-41Q",authDomain:"regixa-a1a83.firebaseapp.com",projectId:"regixa-a1a83",storageBucket:"regixa-a1a83.firebasestorage.app",messagingSenderId:"315710277891",appId:"1:315710277891:web:9a9be5f6394863522ac136"};
-const app=initializeApp(FB);
-const auth=getAuth(app);
-const db=getFirestore(app);
-
 // STATE
 let CU=null,UID=null;
 let _cos=[],_users=[],_regs={},_mls={},_bks={};
