@@ -180,10 +180,43 @@ tr:hover td{background:var(--g50)}
   </div>
 </div>
 <div class="tw" id="toasts"></div>
-<script type="module">
-import{initializeApp}from'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import{getAuth,signInWithEmailAndPassword,createUserWithEmailAndPassword,signOut,onAuthStateChanged,sendPasswordResetEmail}from'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import{getFirestore,doc,getDoc,getDocs,setDoc,addDoc,updateDoc,deleteDoc,collection,query,orderBy,serverTimestamp}from'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script>
+const FB={apiKey:"AIzaSyBfKnCuJXiIgsJRG8hU42Hd8xSW6os-41Q",authDomain:"regixa-a1a83.firebaseapp.com",projectId:"regixa-a1a83",storageBucket:"regixa-a1a83.firebasestorage.app",messagingSenderId:"315710277891",appId:"1:315710277891:web:9a9be5f6394863522ac136"};
+firebase.initializeApp(FB);
+const auth=firebase.auth();
+const db=firebase.firestore();
+
+// Simple compat helpers
+const signInWithEmailAndPassword=(a,e,p)=>a.signInWithEmailAndPassword(e,p);
+const createUserWithEmailAndPassword=(a,e,p)=>a.createUserWithEmailAndPassword(e,p);
+const signOut=a=>a.signOut();
+const sendPasswordResetEmail=(a,e)=>a.sendPasswordResetEmail(e);
+const onAuthStateChanged=(a,cb)=>a.onAuthStateChanged(cb);
+const serverTimestamp=()=>firebase.firestore.FieldValue.serverTimestamp();
+
+// Path helpers — converts ('companies','id','registers','id') to Firestore ref
+function _ref(base,...path){
+  let r=base;
+  for(let i=0;i<path.length;i++){
+    r=i%2===0?r.collection(path[i]):r.doc(path[i]);
+  }
+  return r;
+}
+const col=(b,...p)=>_ref(b,...p);
+const docRef=(b,...p)=>_ref(b,...p);
+
+async function getDoc(ref){const s=await ref.get();return{exists:()=>s.exists,data:()=>s.data(),id:s.id};}
+async function getDocs(ref){const s=await ref.get();return{docs:s.docs.map(d=>({id:d.id,...d.data()}))};}
+async function getDocsOrdered(ref,field,dir='desc'){const s=await ref.orderBy(field,dir).get();return{docs:s.docs.map(d=>({id:d.id,...d.data()}))};}
+async function setDoc(ref,data){return ref.set(data);}
+async function addDoc(ref,data){const r=await ref.add(data);return{id:r.id};}
+async function updateDoc(ref,data){return ref.update(data);}
+async function deleteDoc(ref){return ref.delete();}
+
+
 
 const FB={apiKey:"AIzaSyBfKnCuJXiIgsJRG8hU42Hd8xSW6os-41Q",authDomain:"regixa-a1a83.firebaseapp.com",projectId:"regixa-a1a83",storageBucket:"regixa-a1a83.firebasestorage.app",messagingSenderId:"315710277891",appId:"1:315710277891:web:9a9be5f6394863522ac136"};
 const app=initializeApp(FB);
@@ -222,11 +255,11 @@ window.doLogin=async function(){
   try{
     const cr=await signInWithEmailAndPassword(auth,email,pw);
     UID=cr.user.uid;
-    const us=await getDoc(doc(db,'users',UID));
+    const us=await getDoc(docRef(db,'users',UID));
     if(!us.exists())throw new Error('User profile not found. Contact admin.');
     CU=us.data();
     if(CU.role!=='super'&&CU.companyId){
-      const cs=await getDoc(doc(db,'companies',CU.companyId));
+      const cs=await getDoc(docRef(db,'companies',CU.companyId));
       if(cs.exists()&&cs.data().expiry){
         const exp=new Date(cs.data().expiry);exp.setHours(23,59,59);
         if(new Date()>exp){await signOut(auth);throw new Error('Subscription expired. Contact your administrator.');}
@@ -244,28 +277,28 @@ window.doLogout=async function(){
 
 async function loadAll(){
   if(CU.role==='super'){
-    _cos=(await getDocs(collection(db,'companies'))).docs.map(d=>({id:d.id,...d.data()}));
-    _users=(await getDocs(collection(db,'users'))).docs.map(d=>({uid:d.id,...d.data()}));
+    _cos=(await getDocs(col(db,'companies'))).docs.map(d=>({id:d.id,...d.data()}));
+    _users=(await getDocs(col(db,'users'))).docs.map(d=>({uid:d.id,...d.data()}));
     for(const co of _cos)await loadCo(co.id);
   }else{
-    const cs=await getDoc(doc(db,'companies',CU.companyId));
+    const cs=await getDoc(docRef(db,'companies',CU.companyId));
     _cos=cs.exists()?[{id:cs.id,...cs.data()}]:[];
-    _users=(await getDocs(collection(db,'users'))).docs.map(d=>({uid:d.id,...d.data()})).filter(u=>u.companyId===CU.companyId);
+    _users=(await getDocs(col(db,'users'))).docs.map(d=>({uid:d.id,...d.data()})).filter(u=>u.companyId===CU.companyId);
     await loadCo(CU.companyId);
   }
 }
 
 async function loadCo(cid){
-  _regs[cid]=(await getDocs(collection(db,'companies',cid,'registers'))).docs.map(d=>({id:d.id,...d.data()}));
-  const mSnap=await getDocs(collection(db,'companies',cid,'masterLists'));
+  _regs[cid]=(await getDocs(col(db,'companies',cid,'registers'))).docs.map(d=>({id:d.id,...d.data()}));
+  const mSnap=await getDocs(col(db,'companies',cid,'masterLists'));
   _mls[cid]=await Promise.all(mSnap.docs.map(async d=>{
     const ml={id:d.id,...d.data()};
-    ml.rows=(await getDocs(collection(db,'companies',cid,'masterLists',d.id,'rows'))).docs.map(r=>({id:r.id,...r.data()}));
+    ml.rows=(await getDocs(col(db,'companies',cid,'masterLists',d.id,'rows'))).docs.map(r=>({id:r.id,...r.data()}));
     return ml;
   }));
   _bks[cid]={};
   for(const r of _regs[cid]){
-    _bks[cid][r.id]=(await getDocs(query(collection(db,'companies',cid,'registers',r.id,'bookings'),orderBy('createdAt','desc')))).docs.map(d=>({id:d.id,...d.data()}));
+    _bks[cid][r.id]=(await getDocsOrdered(db.collection('companies').doc(cid).collection('registers').doc(r.id).collection('bookings'),'createdAt','desc')).docs.map(d=>({id:d.id,...d.data()}));
   }
 }
 
@@ -729,8 +762,8 @@ window.addCompany=async function(){
     const uid=cr.user.uid;
     const colors=['#4B35D4','#0D9488','#D97706','#9333EA','#DC2626','#16A34A'];
     const cid=name.toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'');
-    await setDoc(doc(db,'companies',cid),{name,loc,active:true,color:colors[_cos.length%colors.length],adminEmail:email,expiry:''});
-    await setDoc(doc(db,'users',uid),{name:aName,email,role:'company',companyId:cid});
+    await setDoc(docRef(db,'companies',cid),{name,loc,active:true,color:colors[_cos.length%colors.length],adminEmail:email,expiry:''});
+    await setDoc(docRef(db,'users',uid),{name:aName,email,role:'company',companyId:cid});
     _cos.push({id:cid,name,loc,active:true,color:colors[(_cos.length-1)%colors.length],adminEmail:email,expiry:''});
     _users.push({uid,name:aName,email,role:'company',companyId:cid});
     _regs[cid]=[];_bks[cid]={};_mls[cid]=[];
@@ -740,19 +773,19 @@ window.addCompany=async function(){
 
 window.deleteCo=async function(id){
   if(!confirm('Delete company? This cannot be undone.'))return;
-  try{await deleteDoc(doc(db,'companies',id));_cos=_cos.filter(c=>c.id!==id);toast('Deleted','amber');loadPage('sa-cos');}catch(e){toast(e.message,'red');}
+  try{await deleteDoc(docRef(db,'companies',id));_cos=_cos.filter(c=>c.id!==id);toast('Deleted','amber');loadPage('sa-cos');}catch(e){toast(e.message,'red');}
 };
 
 window.addUser=async function(){
   const name=v('m1'),email=v('m2'),pw=v('m3'),role=v('m4'),cid=v('m5');
   if(!name||!email||!pw){toast('Fill all fields','red');return;}if(pw.length<6){toast('Password min 6 chars','red');return;}
   ss(true);
-  try{const cr=await createUserWithEmailAndPassword(auth,email,pw);await setDoc(doc(db,'users',cr.user.uid),{name,email,role,companyId:cid});_users.push({uid:cr.user.uid,name,email,role,companyId:cid});closeModal();toast('User created','green');loadPage('sa-users');}catch(e){toast(e.message.replace('Firebase: ',''),'red');}finally{ss(false);}
+  try{const cr=await createUserWithEmailAndPassword(auth,email,pw);await setDoc(docRef(db,'users',cr.user.uid),{name,email,role,companyId:cid});_users.push({uid:cr.user.uid,name,email,role,companyId:cid});closeModal();toast('User created','green');loadPage('sa-users');}catch(e){toast(e.message.replace('Firebase: ',''),'red');}finally{ss(false);}
 };
 
 window.removeUser=async function(uid){
   if(!confirm('Remove this user?'))return;
-  try{await deleteDoc(doc(db,'users',uid));_users=_users.filter(u=>u.uid!==uid);toast('Removed','amber');loadPage(CU.role==='super'?'sa-users':'co-agents');}catch(e){toast(e.message,'red');}
+  try{await deleteDoc(docRef(db,'users',uid));_users=_users.filter(u=>u.uid!==uid);toast('Removed','amber');loadPage(CU.role==='super'?'sa-users':'co-agents');}catch(e){toast(e.message,'red');}
 };
 
 window.resetPw=async function(uid,email){
@@ -762,7 +795,7 @@ window.resetPw=async function(uid,email){
 
 window.saveExpiry=async function(id){
   const val=g('exp-'+id)?.value;if(!val){toast('Select a date','red');return;}
-  try{await updateDoc(doc(db,'companies',id),{expiry:val});const co=_cos.find(c=>c.id===id);if(co)co.expiry=val;toast('Expiry updated','green');loadPage('sa-subs');}catch(e){toast(e.message,'red');}
+  try{await updateDoc(docRef(db,'companies',id),{expiry:val});const co=_cos.find(c=>c.id===id);if(co)co.expiry=val;toast('Expiry updated','green');loadPage('sa-subs');}catch(e){toast(e.message,'red');}
 };
 
 window.showCoReport=function(id){
@@ -777,15 +810,15 @@ window.addRegister=async function(){
   const name=v('m1'),icon=v('m2')||'&#128203;',id=v('m3');
   if(!name||!id){toast('Fill all fields','red');return;}if(/\s/.test(id)){toast('No spaces in ID','red');return;}
   ss(true);
-  try{const rd={name,icon,id,fields:[],filters:[]};await setDoc(doc(db,'companies',CU.companyId,'registers',id),rd);if(!_regs[CU.companyId])_regs[CU.companyId]=[];_regs[CU.companyId].push(rd);if(!_bks[CU.companyId])_bks[CU.companyId]={};_bks[CU.companyId][id]=[];closeModal();buildSidebar();openM('edit-fields',''+((_regs[CU.companyId].length-1)));toast('Register created','green');}catch(e){toast(e.message,'red');}finally{ss(false);}
+  try{const rd={name,icon,id,fields:[],filters:[]};await setDoc(docRef(db,'companies',CU.companyId,'registers',id),rd);if(!_regs[CU.companyId])_regs[CU.companyId]=[];_regs[CU.companyId].push(rd);if(!_bks[CU.companyId])_bks[CU.companyId]={};_bks[CU.companyId][id]=[];closeModal();buildSidebar();openM('edit-fields',''+((_regs[CU.companyId].length-1)));toast('Register created','green');}catch(e){toast(e.message,'red');}finally{ss(false);}
 };
 
 window.delRegister=async function(ri){
   const reg=(_regs[CU.companyId]||[])[ri];if(!confirm('Delete "'+reg.name+'" and all bookings?'))return;
-  try{await deleteDoc(doc(db,'companies',CU.companyId,'registers',reg.id));_regs[CU.companyId].splice(ri,1);delete(_bks[CU.companyId]||{})[reg.id];buildSidebar();loadPage('co-regs');toast('Deleted','amber');}catch(e){toast(e.message,'red');}
+  try{await deleteDoc(docRef(db,'companies',CU.companyId,'registers',reg.id));_regs[CU.companyId].splice(ri,1);delete(_bks[CU.companyId]||{})[reg.id];buildSidebar();loadPage('co-regs');toast('Deleted','amber');}catch(e){toast(e.message,'red');}
 };
 
-async function saveReg(ri){const reg=(_regs[CU.companyId]||[])[ri];await updateDoc(doc(db,'companies',CU.companyId,'registers',reg.id),{fields:reg.fields||[],filters:reg.filters||[]});}
+async function saveReg(ri){const reg=(_regs[CU.companyId]||[])[ri];await updateDoc(docRef(db,'companies',CU.companyId,'registers',reg.id),{fields:reg.fields||[],filters:reg.filters||[]});}
 
 window.addField=async function(ri){
   const fn=v('nfn'),ft=v('nft'),req=g('nfreq')?.checked;
@@ -811,63 +844,63 @@ window.saveBooking=async function(regId){
   const cid=CU.companyId,reg=(_regs[cid]||[]).find(r=>r.id===regId);
   const vals={};(reg.fields||[]).forEach((f,i)=>{const el=g('bf-'+i);if(!el)return;if(f.t==='created-on'){vals[f.n]=nowStamp();return;}if(f.t==='master-lookup'){if(el.value)try{const d=JSON.parse(decodeURIComponent(el.value));vals[f.n]=d[f.src?.col]||'';}catch{vals[f.n]='';}}else vals[f.n]=el.value||'';});
   ss(true);
-  try{const ref=await addDoc(collection(db,'companies',cid,'registers',regId,'bookings'),{vals,createdAt:serverTimestamp(),createdBy:UID});if(!_bks[cid])_bks[cid]={};if(!_bks[cid][regId])_bks[cid][regId]=[];_bks[cid][regId].unshift({id:ref.id,vals});closeModal();toast('Booking saved!','green');reReg(regId);}catch(e){toast(e.message,'red');}finally{ss(false);}
+  try{const ref=await addDoc(col(db,'companies',cid,'registers',regId,'bookings'),{vals,createdAt:serverTimestamp(),createdBy:UID});if(!_bks[cid])_bks[cid]={};if(!_bks[cid][regId])_bks[cid][regId]=[];_bks[cid][regId].unshift({id:ref.id,vals});closeModal();toast('Booking saved!','green');reReg(regId);}catch(e){toast(e.message,'red');}finally{ss(false);}
 };
 
 window.updBooking=async function(regId,ri){
   const cid=CU.companyId,reg=(_regs[cid]||[]).find(r=>r.id===regId),row=(_bks[cid]||{})[regId][ri];
   const nv={...row.vals};(reg.fields||[]).forEach((f,i)=>{if(f.t==='created-on')return;const el=g('ef-'+i);if(el)nv[f.n]=el.value;});
   ss(true);
-  try{await updateDoc(doc(db,'companies',cid,'registers',regId,'bookings',row.id),{vals:nv});row.vals=nv;closeModal();toast('Updated','green');reReg(regId);}catch(e){toast(e.message,'red');}finally{ss(false);}
+  try{await updateDoc(docRef(db,'companies',cid,'registers',regId,'bookings',row.id),{vals:nv});row.vals=nv;closeModal();toast('Updated','green');reReg(regId);}catch(e){toast(e.message,'red');}finally{ss(false);}
 };
 
 window.delBooking=async function(regId,ri){
   if(!confirm('Delete this booking?'))return;
   const cid=CU.companyId,row=(_bks[cid]||{})[regId][ri];
-  try{await deleteDoc(doc(db,'companies',cid,'registers',regId,'bookings',row.id));_bks[cid][regId].splice(ri,1);toast('Deleted','amber');reReg(regId);}catch(e){toast(e.message,'red');}
+  try{await deleteDoc(docRef(db,'companies',cid,'registers',regId,'bookings',row.id));_bks[cid][regId].splice(ri,1);toast('Deleted','amber');reReg(regId);}catch(e){toast(e.message,'red');}
 };
 
 window.updateStatus=async function(regId,ri,fn,sel){
   const val=sel.value;if(!val)return;
   const cid=CU.companyId,row=(_bks[cid]||{})[regId][ri];
-  try{const nv={...row.vals};nv[fn]=val;await updateDoc(doc(db,'companies',cid,'registers',regId,'bookings',row.id),{vals:nv});row.vals[fn]=val;toast('Status → '+val,'green');reReg(regId);}catch(e){toast(e.message,'red');}
+  try{const nv={...row.vals};nv[fn]=val;await updateDoc(docRef(db,'companies',cid,'registers',regId,'bookings',row.id),{vals:nv});row.vals[fn]=val;toast('Status → '+val,'green');reReg(regId);}catch(e){toast(e.message,'red');}
 };
 
 window.quickSave=async function(regId,ri,fn,val){
   const cid=CU.companyId,row=(_bks[cid]||{})[regId][ri];
   if(!row||row.vals?.[fn]===val)return;
-  try{const nv={...row.vals};nv[fn]=val;await updateDoc(doc(db,'companies',cid,'registers',regId,'bookings',row.id),{vals:nv});row.vals[fn]=val;toast(fn+' updated','green');}catch(e){toast(e.message,'red');}
+  try{const nv={...row.vals};nv[fn]=val;await updateDoc(docRef(db,'companies',cid,'registers',regId,'bookings',row.id),{vals:nv});row.vals[fn]=val;toast(fn+' updated','green');}catch(e){toast(e.message,'red');}
 };
 
 window.addML=async function(){
   const name=v('m1'),icon=v('m2')||'&#128209;',id=v('m3'),cols=window._newCols||[];
   if(!name||!id){toast('Fill name and ID','red');return;}if(!cols.length){toast('Add at least one column','red');return;}
   ss(true);
-  try{const md={name,icon,id,columns:cols.map(c=>({n:c}))};await setDoc(doc(db,'companies',CU.companyId,'masterLists',id),md);if(!_mls[CU.companyId])_mls[CU.companyId]=[];_mls[CU.companyId].push({...md,rows:[]});closeModal();buildSidebar();loadPage('co-ml');toast('Master list created','green');}catch(e){toast(e.message,'red');}finally{ss(false);}
+  try{const md={name,icon,id,columns:cols.map(c=>({n:c}))};await setDoc(docRef(db,'companies',CU.companyId,'masterLists',id),md);if(!_mls[CU.companyId])_mls[CU.companyId]=[];_mls[CU.companyId].push({...md,rows:[]});closeModal();buildSidebar();loadPage('co-ml');toast('Master list created','green');}catch(e){toast(e.message,'red');}finally{ss(false);}
 };
 
 window.saveMLMeta=async function(mi){
   const m=(_mls[CU.companyId]||[])[mi];m.name=v('m1');m.icon=v('m2')||m.icon;ss(true);
-  try{await updateDoc(doc(db,'companies',CU.companyId,'masterLists',m.id),{name:m.name,icon:m.icon});closeModal();buildSidebar();loadPage('co-ml');toast('Updated','green');}catch(e){toast(e.message,'red');}finally{ss(false);}
+  try{await updateDoc(docRef(db,'companies',CU.companyId,'masterLists',m.id),{name:m.name,icon:m.icon});closeModal();buildSidebar();loadPage('co-ml');toast('Updated','green');}catch(e){toast(e.message,'red');}finally{ss(false);}
 };
 
 window.addMLCol=async function(mi){
   const col=v('new-col').trim();if(!col){toast('Enter column name','red');return;}
   const m=(_mls[CU.companyId]||[])[mi];m.columns.push({n:col});
-  try{await updateDoc(doc(db,'companies',CU.companyId,'masterLists',m.id),{columns:m.columns});openM('edit-ml',''+mi);toast('Column added','green');}catch(e){toast(e.message,'red');}
+  try{await updateDoc(docRef(db,'companies',CU.companyId,'masterLists',m.id),{columns:m.columns});openM('edit-ml',''+mi);toast('Column added','green');}catch(e){toast(e.message,'red');}
 };
 
 window.delMLCol=async function(mi,ci){
   const m=(_mls[CU.companyId]||[])[mi],cn=m.columns[ci].n;
   if((m.rows||[]).some(r=>r.vals?.[cn])&&!confirm('Column has data. Delete?'))return;
   m.columns.splice(ci,1);(m.rows||[]).forEach(r=>{if(r.vals)delete r.vals[cn];});
-  try{await updateDoc(doc(db,'companies',CU.companyId,'masterLists',m.id),{columns:m.columns});openM('edit-ml',''+mi);toast('Column removed','amber');}catch(e){toast(e.message,'red');}
+  try{await updateDoc(docRef(db,'companies',CU.companyId,'masterLists',m.id),{columns:m.columns});openM('edit-ml',''+mi);toast('Column removed','amber');}catch(e){toast(e.message,'red');}
 };
 
 window.delML=async function(mi){
   if(!confirm('Delete this master list?'))return;
   const m=(_mls[CU.companyId]||[])[mi];
-  try{await deleteDoc(doc(db,'companies',CU.companyId,'masterLists',m.id));_mls[CU.companyId].splice(mi,1);buildSidebar();loadPage('co-ml');toast('Deleted','amber');}catch(e){toast(e.message,'red');}
+  try{await deleteDoc(docRef(db,'companies',CU.companyId,'masterLists',m.id));_mls[CU.companyId].splice(mi,1);buildSidebar();loadPage('co-ml');toast('Deleted','amber');}catch(e){toast(e.message,'red');}
 };
 
 window.saveMLRow=async function(mi,ri){
@@ -875,8 +908,8 @@ window.saveMLRow=async function(mi,ri){
   const vals={};(m.columns||[]).forEach((c,ci)=>{const el=g('mlr-'+ci);if(el)vals[c.n]=el.value.trim();});
   ss(true);
   try{
-    if(ri===null||ri==='null'){const ref=await addDoc(collection(db,'companies',CU.companyId,'masterLists',m.id,'rows'),{vals});if(!m.rows)m.rows=[];m.rows.push({id:ref.id,vals});}
-    else{const row=m.rows[parseInt(ri)];await updateDoc(doc(db,'companies',CU.companyId,'masterLists',m.id,'rows',row.id),{vals});row.vals=vals;}
+    if(ri===null||ri==='null'){const ref=await addDoc(col(db,'companies',CU.companyId,'masterLists',m.id,'rows'),{vals});if(!m.rows)m.rows=[];m.rows.push({id:ref.id,vals});}
+    else{const row=m.rows[parseInt(ri)];await updateDoc(docRef(db,'companies',CU.companyId,'masterLists',m.id,'rows',row.id),{vals});row.vals=vals;}
     closeModal();toast(ri===null||ri==='null'?'Record added':'Updated','green');loadPage('ml-'+m.id);
   }catch(e){toast(e.message,'red');}finally{ss(false);}
 };
@@ -884,14 +917,14 @@ window.saveMLRow=async function(mi,ri){
 window.delMLRow=async function(mi,ri,fromML){
   if(!confirm('Delete this record?'))return;
   const m=(_mls[CU.companyId]||[])[mi],row=(m.rows||[])[ri];
-  try{await deleteDoc(doc(db,'companies',CU.companyId,'masterLists',m.id,'rows',row.id));m.rows.splice(ri,1);toast('Deleted','amber');if(fromML)loadPage('ml-'+m.id);else loadPage('co-ml');}catch(e){toast(e.message,'red');}
+  try{await deleteDoc(docRef(db,'companies',CU.companyId,'masterLists',m.id,'rows',row.id));m.rows.splice(ri,1);toast('Deleted','amber');if(fromML)loadPage('ml-'+m.id);else loadPage('co-ml');}catch(e){toast(e.message,'red');}
 };
 
 window.addAgent=async function(){
   const name=v('m1'),email=v('m2'),pw=v('m3');
   if(!name||!email||!pw){toast('Fill all fields','red');return;}if(pw.length<6){toast('Password min 6 chars','red');return;}
   ss(true);
-  try{const cr=await createUserWithEmailAndPassword(auth,email,pw);await setDoc(doc(db,'users',cr.user.uid),{name,email,role:'agent',companyId:CU.companyId});_users.push({uid:cr.user.uid,name,email,role:'agent',companyId:CU.companyId});closeModal();toast('Agent added: '+email,'green');loadPage('co-agents');}catch(e){toast(e.message.replace('Firebase: ',''),'red');}finally{ss(false);}
+  try{const cr=await createUserWithEmailAndPassword(auth,email,pw);await setDoc(docRef(db,'users',cr.user.uid),{name,email,role:'agent',companyId:CU.companyId});_users.push({uid:cr.user.uid,name,email,role:'agent',companyId:CU.companyId});closeModal();toast('Agent added: '+email,'green');loadPage('co-agents');}catch(e){toast(e.message.replace('Firebase: ',''),'red');}finally{ss(false);}
 };
 
 // FIELD SRC UI
@@ -955,7 +988,8 @@ window.importFile=function(ev,mi){
   if(isX&&typeof XLSX!=='undefined'){reader.onload=e=>{try{const wb=XLSX.read(e.target.result,{type:'array'});proc(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''}));}catch(err){toast('Excel error: '+err.message,'red');}};reader.readAsArrayBuffer(file);}
   else{reader.onload=e=>{try{proc(e.target.result.replace(/
 /g,'
-').replace(//g,'
+').replace(/
+/g,'
 ').split('
 ').filter(l=>l.trim()).map(parseCsv));}catch(err){toast('CSV error: '+err.message,'red');}};reader.readAsText(file);}
 };
@@ -963,7 +997,7 @@ window.importFile=function(ev,mi){
 window.confirmImport=async function(){
   const p=window._pendingImport;if(!p)return;
   const m=(_mls[CU.companyId]||[])[p.mi];ss(true);let added=0;
-  try{for(const row of p.dataRows){const vals={};p.colMap.forEach(x=>{vals[x.col]=x.fi>-1?String(row[x.fi]||'').trim():'';});const ref=await addDoc(collection(db,'companies',CU.companyId,'masterLists',m.id,'rows'),{vals});if(!m.rows)m.rows=[];m.rows.push({id:ref.id,vals});added++;}
+  try{for(const row of p.dataRows){const vals={};p.colMap.forEach(x=>{vals[x.col]=x.fi>-1?String(row[x.fi]||'').trim():'';});const ref=await addDoc(col(db,'companies',CU.companyId,'masterLists',m.id,'rows'),{vals});if(!m.rows)m.rows=[];m.rows.push({id:ref.id,vals});added++;}
   window._pendingImport=null;closeModal();toast(added+' records imported','green');loadPage('ml-'+m.id);}catch(e){toast(e.message,'red');}finally{ss(false);}
 };
 
