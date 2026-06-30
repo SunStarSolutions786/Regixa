@@ -20,7 +20,7 @@ html,body{height:100%;font-family:'Inter',sans-serif;background:#F8FAFC;color:#1
 @keyframes fadeIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle}
 @keyframes spin{to{transform:rotate(360deg)}}
-#login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#EAE6FF 0%,#EBF4FF 50%,#F8FAFC 100%)}
+#login-screen{min-height:100vh;display:none;align-items:center;justify-content:center;background:linear-gradient(135deg,#EAE6FF 0%,#EBF4FF 50%,#F8FAFC 100%)}
 .login-card{background:white;border-radius:16px;box-shadow:var(--shm);padding:2.5rem;width:100%;max-width:360px}
 .login-logo{display:flex;align-items:center;gap:9px;margin-bottom:2rem;justify-content:center}
 .inp{margin-bottom:1rem}
@@ -155,6 +155,10 @@ tr:hover td{background:var(--g50)}
     <button class="btn-full" id="login-btn" onclick="doLogin()">Sign in</button>
   </div>
 </div>
+<div id="session-loading" style="display:flex;min-height:100vh;align-items:center;justify-content:center;background:linear-gradient(135deg,#EAE6FF 0%,#EBF4FF 50%,#F8FAFC 100%);flex-direction:column;gap:14px">
+  <svg width="40" height="40" viewBox="0 0 44 44" fill="none"><defs><linearGradient id="lg3" x1="0" y1="0" x2="44" y2="44" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#2A8DFF"/><stop offset="100%" stop-color="#9B35E8"/></linearGradient></defs><rect width="44" height="44" rx="12" fill="url(#lg3)"/><rect x="10" y="14" width="24" height="20" rx="3" fill="white" fill-opacity=".95"/><rect x="15" y="11" width="3" height="6" rx="1.5" fill="white"/><rect x="26" y="11" width="3" height="6" rx="1.5" fill="white"/><rect x="14" y="20" width="4" height="4" rx="1" fill="url(#lg3)"/><rect x="20" y="20" width="4" height="4" rx="1" fill="url(#lg3)"/><rect x="26" y="20" width="4" height="4" rx="1" fill="url(#lg3)"/><rect x="14" y="26" width="4" height="4" rx="1" fill="url(#lg3)"/><path d="M20 28l2 2 4-4" stroke="url(#lg3)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  <div style="display:flex;align-items:center;gap:8px;color:var(--g500);font-size:13px"><span class="spin" style="border-top-color:var(--p);border-color:rgba(75,53,212,.2)"></span> Loading your workspace…</div>
+</div>
 <div id="app">
   <div class="topbar">
     <div class="tb-logo">
@@ -242,27 +246,33 @@ function fmtDV(d){return d.toISOString().slice(0,10);}
 function setSaving(id,on){const b=g(id);if(!b)return;b.disabled=on;if(on){b._t=b.innerHTML;b.innerHTML='<span class="spin"></span>';}else{b.innerHTML=b._t||'Save';}}
 
 // AUTH
+async function restoreSession(uid){
+  UID=uid;
+  const us=await getDoc(docRef(db,'users',UID));
+  if(!us.exists())throw new Error('User profile not found. Contact admin.');
+  CU=us.data();
+  if(CU.role!=='super'&&CU.companyId){
+    const cs=await getDoc(docRef(db,'companies',CU.companyId));
+    if(cs.exists()&&cs.data().expiry){
+      const exp=new Date(cs.data().expiry);exp.setHours(23,59,59);
+      if(new Date()>exp){await signOut(auth);throw new Error('Subscription expired. Contact your administrator.');}
+    }
+  }
+  await loadAll();initApp();
+}
+
 window.doLogin=async function(){
   const email=v('l-email'),pw=v('l-pw');
   if(!email||!pw){showErr('Enter email and password');return;}
   const btn=g('login-btn');btn.disabled=true;btn.innerHTML='<span class="spin"></span> Signing in…';
   g('lerr').style.display='none';
   try{
-    const cr=await signInWithEmailAndPassword(auth,email,pw);
-    UID=cr.user.uid;
-    const us=await getDoc(docRef(db,'users',UID));
-    if(!us.exists())throw new Error('User profile not found. Contact admin.');
-    CU=us.data();
-    if(CU.role!=='super'&&CU.companyId){
-      const cs=await getDoc(docRef(db,'companies',CU.companyId));
-      if(cs.exists()&&cs.data().expiry){
-        const exp=new Date(cs.data().expiry);exp.setHours(23,59,59);
-        if(new Date()>exp){await signOut(auth);throw new Error('Subscription expired. Contact your administrator.');}
-      }
-    }
-    await loadAll();initApp();
-  }catch(e){showErr(e.message.replace('Firebase: ','').replace(/\(auth.*\)/,'').trim());}
-  finally{btn.disabled=false;btn.innerHTML='Sign in';}
+    await signInWithEmailAndPassword(auth,email,pw);
+    // onAuthStateChanged listener picks this up and calls restoreSession + initApp
+  }catch(e){
+    showErr(e.message.replace('Firebase: ','').replace(/\(auth.*\)/,'').trim());
+    btn.disabled=false;btn.innerHTML='Sign in';
+  }
 };
 
 window.doLogout=async function(){
@@ -298,6 +308,8 @@ async function loadCo(cid){
 }
 
 function initApp(){
+  g('session-loading').style.display='none';
+  const lb=g('login-btn'); if(lb){lb.disabled=false;lb.innerHTML='Sign in';}
   g('login-screen').style.display='none';g('app').classList.add('show');
   const co=_cos.find(c=>c.id===CU.companyId)||null;
   g('tb-co').textContent=co?co.name:'Platform Admin';
@@ -993,7 +1005,27 @@ window.confirmImport=async function(){
 
 function parseCsv(line){const r=[];let cur='',inQ=false;for(const c of line){if(c==='"')inQ=!inQ;else if(c===','&&!inQ){r.push(cur.trim());cur='';}else cur+=c;}r.push(cur.trim());return r;}
 
-onAuthStateChanged(auth,user=>{if(!user){g('login-screen').style.display='flex';g('app').classList.remove('show');}});
+let _restoring=false;
+onAuthStateChanged(auth,async user=>{
+  if(_restoring) return;
+  if(user && !CU){
+    _restoring=true;
+    try{
+      await restoreSession(user.uid);
+    }catch(e){
+      console.error('Session restore failed:',e);
+      await signOut(auth).catch(()=>{});
+      g('session-loading').style.display='none';
+      g('login-screen').style.display='flex';
+      showErr(e.message.replace('Firebase: ','').trim());
+    }
+    _restoring=false;
+  }else if(!user){
+    g('session-loading').style.display='none';
+    g('login-screen').style.display='flex';
+    g('app').classList.remove('show');
+  }
+});
 </script>
 </body>
 </html>
