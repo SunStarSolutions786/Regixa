@@ -956,8 +956,7 @@ window.dlTemplate=function(mi){
   if(typeof XLSX!=='undefined'){
     const wb=XLSX.utils.book_new(),ws=XLSX.utils.aoa_to_sheet([m.columns.map(c=>c.n),m.columns.map(c=>'Example '+c.n)]);
     ws['!cols']=m.columns.map(()=>({wch:20}));XLSX.utils.book_append_sheet(wb,ws,m.name.slice(0,31));XLSX.writeFile(wb,m.name.replace(/\s+/g,'_')+'_template.xlsx');toast('Template downloaded','green');
-  }else{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([m.columns.map(c=>'"'+c.n+'"').join(',')+'
-'+m.columns.map(c=>'"Example '+c.n+'"').join(',')],{type:'text/csv'}));a.download=m.name.replace(/\s+/g,'_')+'_template.csv';a.click();toast('CSV template downloaded','green');}
+  }else{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([m.columns.map(c=>'"'+c.n+'"').join(',')+'\\n'+m.columns.map(c=>'"Example '+c.n+'"').join(',')],{type:'text/csv'}));a.download=m.name.replace(/\s+/g,'_')+'_template.csv';a.click();toast('CSV template downloaded','green');}
 };
 
 window.importFile=function(ev,mi){
@@ -981,13 +980,9 @@ window.importFile=function(ev,mi){
     ev.target.value='';g('modal').classList.add('on');
   }
   if(isX&&typeof XLSX!=='undefined'){reader.onload=e=>{try{const wb=XLSX.read(e.target.result,{type:'array'});proc(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''}));}catch(err){toast('Excel error: '+err.message,'red');}};reader.readAsArrayBuffer(file);}
-  else{reader.onload=e=>{try{proc(e.target.result.replace(/
-/g,'
-').replace(/
-/g,'
-').split('
-').filter(l=>l.trim()).map(parseCsv));}catch(err){toast('CSV error: '+err.message,'red');}};reader.readAsText(file);}
+  else{reader.onload=e=>{try{proc(e.target.result.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n').filter(l=>l.trim()).map(parseCsv));}catch(err){toast('CSV error: '+err.message,'red');}};reader.readAsText(file);}
 };
+
 
 window.confirmImport=async function(){
   const p=window._pendingImport;if(!p)return;
