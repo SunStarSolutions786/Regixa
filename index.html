@@ -209,8 +209,8 @@ const col=(b,...p)=>_ref(b,...p);
 const docRef=(b,...p)=>_ref(b,...p);
 
 async function getDoc(ref){const s=await ref.get();return{exists:()=>s.exists,data:()=>s.data(),id:s.id};}
-async function getDocs(ref){const s=await ref.get();return{docs:s.docs.map(d=>({id:d.id,...d.data()}))};}
-async function getDocsOrdered(ref,field,dir='desc'){const s=await ref.orderBy(field,dir).get();return{docs:s.docs.map(d=>({id:d.id,...d.data()}))};}
+async function getDocs(ref){const s=await ref.get();return{docs:s.docs.map(d=>({id:d.id,data:()=>d.data()}))};}
+async function getDocsOrdered(ref,field,dir='desc'){const s=await ref.orderBy(field,dir).get();return{docs:s.docs.map(d=>({id:d.id,data:()=>d.data()}))};}
 async function setDoc(ref,data){return ref.set(data);}
 async function addDoc(ref,data){const r=await ref.add(data);return{id:r.id};}
 async function updateDoc(ref,data){return ref.update(data);}
