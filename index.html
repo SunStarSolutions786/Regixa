@@ -224,7 +224,7 @@ async function deleteDoc(ref){return ref.delete();}
 
 // STATE
 let CU=null,UID=null;
-let _cos=[],_users=[],_regs={},_mls={},_bks={};
+let _cos=[],_users=[],_regs={},_mls={},_bks={},_templates=[];
 window._RF={};window._LK={};window._newCols=[];window._dropOpts=[];window._slotOpts=[];
 
 // UTILS
@@ -284,6 +284,7 @@ async function loadAll(){
   if(CU.role==='super'){
     _cos=(await getDocs(col(db,'companies'))).docs.map(d=>({id:d.id,...d.data()}));
     _users=(await getDocs(col(db,'users'))).docs.map(d=>({uid:d.id,...d.data()}));
+    _templates=(await getDocs(col(db,'templates'))).docs.map(d=>({id:d.id,...d.data()}));
     for(const co of _cos)await loadCo(co.id);
   }else{
     const cs=await getDoc(docRef(db,'companies',CU.companyId));
@@ -341,7 +342,8 @@ function buildSidebar(){
     <div class="slbl">Management</div>
     <button class="nb" onclick="nav(this,'sa-cos')">${ICO.co} Companies</button>
     <button class="nb" onclick="nav(this,'sa-users')">${ICO.users} Users</button>
-    <button class="nb" onclick="nav(this,'sa-subs')">${ICO.card} Subscriptions</button>`;
+    <button class="nb" onclick="nav(this,'sa-subs')">${ICO.card} Subscriptions</button>
+    <button class="nb" onclick="nav(this,'sa-templates')">${ICO.regs} Templates</button>`;
   }else if(CU.role==='company'){
     const regs=_regs[CU.companyId]||[],mls=_mls[CU.companyId]||[];
     h=`<div class="slbl">Overview</div><button class="nb on" onclick="nav(this,'co-dash')">${ICO.dash} Dashboard</button>
@@ -373,6 +375,7 @@ function loadPage(page){
     else if(page==='sa-cos')div.innerHTML=pSACos();
     else if(page==='sa-users')div.innerHTML=pSAUsers();
     else if(page==='sa-subs')div.innerHTML=pSASubs();
+    else if(page==='sa-templates')div.innerHTML=pSATemplates();
     else if(page==='co-dash')div.innerHTML=pCoDash();
     else if(page==='co-regs')div.innerHTML=pCoRegs();
     else if(page==='co-ml')div.innerHTML=pCoML();
@@ -428,7 +431,25 @@ function pSASubs(){
   }).join('')}</tbody></table></div>`;
 }
 
-// ── COMPANY PAGES ──
+function pSATemplates(){
+  return`<div class="ph"><div><div class="ph-t">Templates</div><div class="ph-s">Pre-built packages — a register plus its master lists, linked and ready. Apply to any company in one click.</div></div>
+  <button class="btn-p" onclick="openM('add-tpl-pkg')">+ New template package</button></div>
+
+  ${!_templates.length?'<div class="empty"><p>No template packages yet. A package bundles one register with the master lists it looks up from — e.g. "Doctor Appointment" + "Doctors" list.</p></div>':''}
+  ${_templates.map((t,ti)=>`<div class="card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <span style="font-size:24px">${t.icon||'&#128230;'}</span>
+      <div style="flex:1"><div style="font-size:14px;font-weight:600">${t.name}</div><div style="font-size:12px;color:var(--g500)">${t.register?.name?'&#128203; '+t.register.name+' ('+(t.register.fields||[]).length+' fields)':'No register yet'} ${(t.masterLists||[]).length?'&middot; &#128209; '+t.masterLists.length+' master list'+(t.masterLists.length!==1?'s':''):''}</div></div>
+      <button class="btn-o" onclick="openM('edit-tpl-pkg','${ti}')">Edit package</button>
+      <button class="btn-p" onclick="openM('apply-tpl-pkg','${ti}')">Apply to company</button>
+      <button class="btn-del" onclick="delTemplate(${ti})">Delete</button>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:5px">
+      ${(t.masterLists||[]).map(m=>`<span style="background:var(--teall);color:var(--teal);font-size:11px;padding:3px 8px;border-radius:5px">${m.icon||'&#128209;'} ${m.name} (${(m.columns||[]).length} cols)</span>`).join('')}
+      ${t.register?(t.register.fields||[]).map(f=>`<span style="background:var(--g100);color:var(--g600);font-size:11px;padding:3px 8px;border-radius:5px">${f.n} &middot; ${ftLabel(f.t)}${f.src?' &#10226; '+(((t.masterLists||[]).find(m=>m.tempId===f.src.list)||{}).name||f.src.list):''}</span>`).join(''):''}
+    </div>
+  </div>`).join('')}`;
+}
 function pCoDash(){
   const regs=_regs[CU.companyId]||[],bks=_bks[CU.companyId]||{},mls=_mls[CU.companyId]||[];
   const total=Object.values(bks).reduce((a,r)=>a+r.length,0);
@@ -711,6 +732,69 @@ window.openM=function(type,arg){
     B.innerHTML=(m.columns||[]).map((c,ci)=>`<div class="fg"><label>${c.n}</label><input id="mlr-${ci}" value="${ex[c.n]||''}" placeholder="${c.n}"></div>`).join('');
     F.innerHTML=`<button class="btn-o" onclick="closeModal()">Cancel</button><button class="btn-p" id="msb" onclick="saveMLRow(${mi},${isE?ri:'null'})">${isE?'Save':'Add'}</button>`;
   }
+  else if(type==='add-tpl-pkg'){
+    T.textContent='New template package';
+    B.innerHTML=`<div class="fg2"><div class="fg"><label>Package name</label><input id="m1" placeholder="Doctor Appointment System"></div><div class="fg"><label>Icon</label><input id="m2" placeholder="&#128230;" maxlength="2" style="font-size:20px;text-align:center"></div></div>
+    <div class="hint">You'll add master lists and the register's fields in the next step.</div>`;
+    F.innerHTML=`<button class="btn-o" onclick="closeModal()">Cancel</button><button class="btn-p" id="msb" onclick="addTplPkg()">Create &rarr;</button>`;
+  }
+  else if(type==='edit-tpl-pkg'){
+    const ti=parseInt(arg),tpl=_templates[ti];
+    if(!tpl.masterLists)tpl.masterLists=[];
+    if(!tpl.register)tpl.register={name:tpl.name,icon:tpl.icon,fields:[],filters:[]};
+    M.className='mbox wide';T.textContent=tpl.name+' — package contents';
+    window._dropOpts=[];window._slotOpts=[];window._newCols=[];
+    const fts=['text','phone','date','time','timeslot','number','textarea','status','dropdown','master-lookup','auto-fill','created-on'];
+    B.innerHTML=`
+    <div class="sbox" style="margin-top:0">
+      <div class="sbox-t">Master lists in this package</div>
+      <div id="tpl-ml-list">${tpl.masterLists.map((m,mi)=>`<div class="fi"><span style="font-size:16px">${m.icon||'&#128209;'}</span><span class="fi-name">${m.name}</span><span class="fi-type">${(m.columns||[]).length} cols</span><button class="btn-r" style="font-size:11px;padding:2px 7px" onclick="openM('edit-tpl-ml-cols','${ti}|${mi}')">Edit columns</button><button class="btn-del" onclick="delTplML(${ti},${mi})">&#x2715;</button></div>`).join('')||'<div style="font-size:12px;color:var(--g400);margin-bottom:8px">No master lists yet — add one below, e.g. "Doctors".</div>'}</div>
+      <div class="fg2" style="margin-top:8px">
+        <div class="fg" style="margin:0"><label>New master list name</label><input id="new-ml-name" placeholder="Doctors"></div>
+        <div class="fg" style="margin:0"><label>Icon</label><input id="new-ml-icon" placeholder="&#128104;&#8205;&#9877;&#65039;" maxlength="2" style="font-size:18px;text-align:center"></div>
+      </div>
+      <button class="btn-p" style="margin-top:8px;width:100%;justify-content:center" onclick="addTplML(${ti})">+ Add master list</button>
+    </div>
+
+    <div class="sbox">
+      <div class="sbox-t">Register: ${tpl.register.name}</div>
+      <div id="flist">${(tpl.register.fields||[]).map((f,fi)=>`<div class="fi"><span style="color:var(--g300);font-size:14px">&#8942;&#8942;</span><span class="fi-name">${f.n}</span><span class="fi-type">${ftLabel(f.t)}</span>${f.src?`<span class="fi-src">&#10226; ${(tpl.masterLists.find(m=>m.tempId===f.src.list)||{}).name||f.src.list}</span>`:''}${(f.t==='dropdown'||f.t==='timeslot')&&f.options?.length?`<span style="background:var(--g100);color:var(--g600);font-size:10px;padding:2px 6px;border-radius:4px">${f.options.length} opts</span>`:''}${f.quickEdit?'<span style="background:#FEF3C7;color:#92400E;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px">&#9889;</span>':''}<button class="btn-r" style="font-size:11px;padding:2px 7px" onclick="toggleTplQE(${ti},${fi})">${f.quickEdit?'Remove &#9889;':'+ Quick edit'}</button><button class="btn-del" onclick="delTplField(${ti},${fi})">&#x2715;</button></div>`).join('')||'<div class="empty"><p>No fields yet.</p></div>'}</div>
+      <div class="sbox" style="background:white">
+        <div class="sbox-t">Add field</div>
+        <div class="fg2"><div class="fg" style="margin:0"><label>Field name</label><input id="nfn" placeholder="Patient Name"></div>
+        <div class="fg" style="margin:0"><label>Type</label><select id="nft" onchange="toggleTplFS(this,${ti})">${fts.map(t=>`<option value="${t}">${ftLabel(t)}</option>`).join('')}</select></div></div>
+        <div id="field-src-opts" style="margin-top:10px;display:none"></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:8px"><label class="tog"><input type="checkbox" id="nfreq" checked><span class="tog-sl"></span></label><span style="font-size:13px;color:var(--g700)">Required</span></div>
+        <button class="btn-p" style="margin-top:10px;width:100%;justify-content:center" onclick="addTplField(${ti})">Add field</button>
+      </div>
+    </div>`;
+    F.innerHTML=`<button class="btn-o" onclick="closeModal();loadPage('sa-templates')">Done</button>`;
+  }
+  else if(type==='edit-tpl-ml-cols'){
+    const[tiS,miS]=arg.split('|'),ti=parseInt(tiS),mi=parseInt(miS);
+    const tpl=_templates[ti],ml=tpl.masterLists[mi];
+    T.textContent='Columns — '+ml.name;
+    B.innerHTML=`<div class="fg2"><div class="fg"><label>Name</label><input id="m1" value="${ml.name}"></div><div class="fg"><label>Icon</label><input id="m2" value="${ml.icon||''}" maxlength="2" style="font-size:20px;text-align:center"></div></div>
+    <div class="sbox"><div class="sbox-t">Columns</div><div id="col-list">${(ml.columns||[]).map((c,ci)=>`<div class="fi" style="margin-bottom:5px"><span class="fi-name">${c.n}</span><button class="btn-del" onclick="delTplMLCol(${ti},${mi},${ci})">&#x2715;</button></div>`).join('')}</div>
+    <div style="display:flex;gap:8px;margin-top:8px"><input id="new-col" placeholder="New column" style="flex:1;padding:7px 10px;border:1px solid var(--g200);border-radius:7px;font-size:13px;outline:none;font-family:inherit">
+    <button class="btn-p" onclick="addTplMLCol(${ti},${mi})">Add col</button></div></div>`;
+    F.innerHTML=`<button class="btn-o" onclick="closeModal();openM('edit-tpl-pkg','${ti}')">Back</button><button class="btn-p" id="msb" onclick="saveTplMLMeta(${ti},${mi})">Save</button>`;
+  }
+  else if(type==='apply-tpl-pkg'){
+    const ti=parseInt(arg),tpl=_templates[ti];
+    T.textContent='Apply package to company';
+    B.innerHTML=`<div style="display:flex;align-items:center;gap:10px;background:var(--g50);border-radius:8px;padding:10px 12px;margin-bottom:14px">
+      <span style="font-size:24px">${tpl.icon||'&#128230;'}</span>
+      <div><div style="font-size:13px;font-weight:600">${tpl.name}</div><div style="font-size:11px;color:var(--g500)">${tpl.register?.name||''} &middot; ${(tpl.masterLists||[]).length} master list${(tpl.masterLists||[]).length!==1?'s':''}</div></div>
+    </div>
+    <div class="fg"><label>Select company</label><select id="m1">${_cos.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}</select></div>
+    ${(tpl.masterLists||[]).length?`<div class="sbox-t" style="margin-top:4px">Master list IDs for this company</div>`:''}
+    ${(tpl.masterLists||[]).map((m,mi)=>`<div class="fg"><label>${m.icon||'&#128209;'} ${m.name}</label><input id="ml-id-${mi}" value="${m.name.toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'')}"></div>`).join('')}
+    <div class="fg"><label>${tpl.icon||'&#128203;'} ${tpl.register?.name||'Register'} — ID</label><input id="reg-id" value="${(tpl.register?.name||tpl.name).toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'')}"></div>
+    <div class="hint">Master lists are created first, then the register — its Master lookup fields link to them automatically. Lowercase, hyphens only.</div>
+    <div class="hint" style="margin-top:6px">This creates fully independent copies — the company can edit everything afterward without affecting this template.</div>`;
+    F.innerHTML=`<button class="btn-o" onclick="closeModal()">Cancel</button><button class="btn-p" id="msb" onclick="applyTplPkg(${ti})">Apply package</button>`;
+  }
   else if(type==='add-agent'){
     T.textContent='Add agent';
     B.innerHTML=`<div class="fg"><label>Full name</label><input id="m1" placeholder="Agent name"></div>
@@ -811,6 +895,121 @@ window.showCoReport=function(id){
   g('m-title').textContent='Report — '+co.name;g('mbox').className='mbox';
   g('m-body').innerHTML=`<div class="sg sg2" style="margin-bottom:1rem"><div class="sc"><div class="sc-l">Bookings</div><div class="sc-v">${total}</div></div><div class="sc"><div class="sc-l">Master lists</div><div class="sc-v">${mls.length}</div></div></div>${regs.map(r=>`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--g100);font-size:13px"><span>${r.icon||'&#128203;'} ${r.name}</span><span class="tag tb2">${(bks[r.id]||[]).length} bookings</span></div>`).join('')||'<p style="color:var(--g400);font-size:13px">No registers.</p>'}`;
   g('m-ft').innerHTML=`<button class="btn-o" onclick="closeModal()">Close</button>`;g('modal').classList.add('on');
+};
+
+// ── TEMPLATES (Super Admin) — combined package model ──
+window.addTplPkg=async function(){
+  const name=v('m1'),icon=v('m2')||'&#128230;';
+  if(!name){toast('Enter a name','red');return;}
+  ss(true);
+  try{
+    const td={name,icon,masterLists:[],register:{name,icon,fields:[],filters:[]}};
+    const ref=await addDoc(col(db,'templates'),td);
+    _templates.push({id:ref.id,...td});
+    closeModal();openM('edit-tpl-pkg',''+(_templates.length-1));toast('Template package created','green');
+  }catch(e){toast(e.message,'red');}finally{ss(false);}
+};
+
+async function saveTplPkg(ti){
+  const t=_templates[ti];
+  await updateDoc(docRef(db,'templates',t.id),{masterLists:t.masterLists||[],register:t.register||{name:t.name,icon:t.icon,fields:[],filters:[]}});
+}
+
+window.addTplML=async function(ti){
+  const name=v('new-ml-name'),icon=v('new-ml-icon')||'&#128209;';
+  if(!name){toast('Enter a master list name','red');return;}
+  const t=_templates[ti];if(!t.masterLists)t.masterLists=[];
+  const tempId='ml'+Date.now();
+  t.masterLists.push({tempId,name,icon,columns:[]});
+  await saveTplPkg(ti);openM('edit-tpl-pkg',''+ti);toast('Master list added — now add its columns','green');
+};
+
+window.delTplML=async function(ti,mi){
+  const t=_templates[ti],removed=t.masterLists[mi];
+  if(!confirm('Remove "'+removed.name+'" from this package? Any fields linking to it will lose their link.'))return;
+  t.masterLists.splice(mi,1);
+  (t.register?.fields||[]).forEach(f=>{if(f.src?.list===removed.tempId)f.src=null;});
+  await saveTplPkg(ti);openM('edit-tpl-pkg',''+ti);toast('Master list removed','amber');
+};
+
+window.addTplMLCol=async function(ti,mi){
+  const colName=v('new-col').trim();if(!colName){toast('Enter column name','red');return;}
+  const t=_templates[ti];t.masterLists[mi].columns.push({n:colName});
+  await saveTplPkg(ti);openM('edit-tpl-ml-cols',ti+'|'+mi);toast('Column added','green');
+};
+window.delTplMLCol=async function(ti,mi,ci){
+  const t=_templates[ti];t.masterLists[mi].columns.splice(ci,1);
+  await saveTplPkg(ti);openM('edit-tpl-ml-cols',ti+'|'+mi);toast('Column removed','amber');
+};
+window.saveTplMLMeta=async function(ti,mi){
+  const t=_templates[ti],ml=t.masterLists[mi];ml.name=v('m1');ml.icon=v('m2')||ml.icon;
+  ss(true);
+  try{await saveTplPkg(ti);closeModal();openM('edit-tpl-pkg',''+ti);toast('Master list updated','green');}catch(e){toast(e.message,'red');}finally{ss(false);}
+};
+
+window.addTplField=async function(ti){
+  const fn=v('nfn'),ft=v('nft'),req=g('nfreq')?.checked;
+  if(!fn){toast('Enter field name','red');return;}
+  let src=null,options=null;
+  if(ft==='dropdown'){options=[...(window._dropOpts||[])];if(!options.length){toast('Add at least one option','red');return;}window._dropOpts=[];}
+  if(ft==='timeslot'){options=[...(window._slotOpts||[])];if(!options.length){toast('Add at least one slot','red');return;}window._slotOpts=[];}
+  if(ft==='master-lookup'){const list=v('src-list'),colN=v('src-col');if(!list||!colN){toast('Select a master list and column','red');return;}src={list,col:colN};}
+  if(ft==='auto-fill'){const list=v('src-list'),fillCol=v('src-fill-col'),dependsOn=v('src-depends');if(!list||!fillCol){toast('Select a master list and fill column','red');return;}src={list,fillCol,dependsOn};}
+  const t=_templates[ti];if(!t.register)t.register={name:t.name,icon:t.icon,fields:[],filters:[]};
+  if(!t.register.fields)t.register.fields=[];
+  t.register.fields.push({n:fn,t:ft,req:!!req,src,options});
+  await saveTplPkg(ti);openM('edit-tpl-pkg',''+ti);toast('Field added','green');
+};
+window.delTplField=async function(ti,fi){_templates[ti].register.fields.splice(fi,1);await saveTplPkg(ti);openM('edit-tpl-pkg',''+ti);toast('Field removed','amber');};
+window.toggleTplQE=async function(ti,fi){const f=_templates[ti].register.fields[fi];f.quickEdit=!f.quickEdit;await saveTplPkg(ti);openM('edit-tpl-pkg',''+ti);toast(f.quickEdit?'Quick edit ON':'Quick edit OFF',f.quickEdit?'green':'amber');};
+
+window.delTemplate=async function(ti){
+  const t=_templates[ti];if(!confirm('Delete template package "'+t.name+'"? This does not affect companies that already applied it.'))return;
+  try{await deleteDoc(docRef(db,'templates',t.id));_templates.splice(ti,1);loadPage('sa-templates');toast('Template deleted','amber');}catch(e){toast(e.message,'red');}
+};
+
+window.applyTplPkg=async function(ti){
+  const tpl=_templates[ti],targetCid=v('m1');
+  if(!targetCid){toast('Select a company','red');return;}
+  const mlIdMap={}; // tempId -> real new master list id
+  const mls=tpl.masterLists||[];
+  for(let mi=0;mi<mls.length;mi++){
+    const newId=v('ml-id-'+mi);
+    if(!newId||/\s/.test(newId)){toast('Enter a valid ID for "'+mls[mi].name+'" (no spaces)','red');return;}
+    if((_mls[targetCid]||[]).find(m=>m.id===newId)){toast('A master list with ID "'+newId+'" already exists in that company','red');return;}
+    mlIdMap[mls[mi].tempId]=newId;
+  }
+  const regId=v('reg-id');
+  if(!regId||/\s/.test(regId)){toast('Enter a valid register ID (no spaces)','red');return;}
+  if((_regs[targetCid]||[]).find(r=>r.id===regId)){toast('A register with ID "'+regId+'" already exists in that company','red');return;}
+
+  ss(true);
+  try{
+    // 1) Create master lists first
+    for(let mi=0;mi<mls.length;mi++){
+      const newId=mlIdMap[mls[mi].tempId];
+      const md={id:newId,name:mls[mi].name,icon:mls[mi].icon,columns:JSON.parse(JSON.stringify(mls[mi].columns||[]))};
+      await setDoc(docRef(db,'companies',targetCid,'masterLists',newId),md);
+      if(!_mls[targetCid])_mls[targetCid]=[];
+      _mls[targetCid].push({...md,rows:[]});
+    }
+    // 2) Create register, remapping field.src.list from tempId -> real master list id
+    const fields=JSON.parse(JSON.stringify(tpl.register?.fields||[])).map(f=>{
+      if(f.src?.list && mlIdMap[f.src.list]) f.src={...f.src,list:mlIdMap[f.src.list]};
+      return f;
+    });
+    const rd={id:regId,name:tpl.register?.name||tpl.name,icon:tpl.register?.icon||tpl.icon,fields,filters:JSON.parse(JSON.stringify(tpl.register?.filters||[]))};
+    await setDoc(docRef(db,'companies',targetCid,'registers',regId),rd);
+    if(!_regs[targetCid])_regs[targetCid]=[];
+    _regs[targetCid].push(rd);
+    if(!_bks[targetCid])_bks[targetCid]={};
+    _bks[targetCid][regId]=[];
+
+    closeModal();
+    const coName=_cos.find(c=>c.id===targetCid)?.name||targetCid;
+    toast('Applied "'+tpl.name+'" to '+coName+' — '+mls.length+' list(s) + register created','green');
+    if(CU.companyId===targetCid)buildSidebar();
+  }catch(e){toast(e.message,'red');}finally{ss(false);}
 };
 
 window.addRegister=async function(){
@@ -958,7 +1157,39 @@ window.toggleFS=function(sel,ri){
   }else{wrap.style.display='none';wrap.innerHTML='';}
 };
 
+window.toggleTplFS=function(sel,ti){
+  const type=sel.value,wrap=g('field-src-opts'),tpl=_templates[ti];if(!wrap)return;
+  window._dropOpts=window._dropOpts||[];window._slotOpts=window._slotOpts||[];
+  const mls=tpl?.masterLists||[];
+  if(type==='dropdown'){
+    wrap.style.display='block';
+    wrap.innerHTML=`<div class="sbox-t" style="font-size:12px;font-weight:600;color:var(--g700);margin-bottom:6px">Dropdown options</div><div id="drop-opt-list" style="margin-bottom:8px">${window._dropOpts.map((o,i)=>`<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span style="flex:1;font-size:13px;background:var(--g50);padding:4px 9px;border-radius:6px">${o}</span><button class="btn-del" style="padding:2px 7px" onclick="_dropOpts.splice(${i},1);toggleTplFS(document.getElementById('nft'),${ti})">&#x2715;</button></div>`).join('')}</div>
+    <div style="display:flex;gap:6px"><input id="new-drop-opt" placeholder="Add option…" style="flex:1;padding:6px 10px;border:1px solid var(--g200);border-radius:7px;font-size:13px;outline:none;font-family:inherit" onkeydown="if(event.key==='Enter'){_dropOpts.push(this.value.trim());this.value='';toggleTplFS(document.getElementById('nft'),${ti})}"><button class="btn-p" style="padding:5px 12px" onclick="const nv=g('new-drop-opt').value.trim();if(nv){_dropOpts.push(nv);g('new-drop-opt').value='';toggleTplFS(document.getElementById('nft'),${ti})}">Add</button></div>`;
+  }else if(type==='timeslot'){
+    if(!window._slotOpts.length)window._slotOpts=['Morning (8AM–12PM)','Afternoon (12PM–4PM)','Evening (4PM–8PM)'];
+    wrap.style.display='block';
+    wrap.innerHTML=`<div class="sbox-t" style="font-size:12px;font-weight:600;color:var(--g700);margin-bottom:6px">Time slot options</div><div style="margin-bottom:8px">${window._slotOpts.map((o,i)=>`<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span style="flex:1;font-size:13px;background:var(--g50);padding:4px 9px;border-radius:6px">${o}</span><button class="btn-del" style="padding:2px 7px" onclick="_slotOpts.splice(${i},1);toggleTplFS(document.getElementById('nft'),${ti})">&#x2715;</button></div>`).join('')}</div>
+    <div style="display:flex;gap:6px"><input id="new-slot-opt" placeholder="Add slot e.g. 9AM–11AM" style="flex:1;padding:6px 10px;border:1px solid var(--g200);border-radius:7px;font-size:13px;outline:none;font-family:inherit" onkeydown="if(event.key==='Enter'){_slotOpts.push(this.value.trim());this.value='';toggleTplFS(document.getElementById('nft'),${ti})}"><button class="btn-p" style="padding:5px 12px" onclick="const nv=g('new-slot-opt').value.trim();if(nv){_slotOpts.push(nv);g('new-slot-opt').value='';toggleTplFS(document.getElementById('nft'),${ti})}">Add</button></div>`;
+  }else if(type==='master-lookup'){
+    wrap.style.display='block';
+    if(!mls.length){wrap.innerHTML=`<div class="hint" style="color:var(--amber)">&#9888; Add a master list to this package first (above), then come back to this field type.</div>`;return;}
+    wrap.innerHTML=`<div class="fg2"><div class="fg" style="margin:0"><label>Source list (in this package)</label><select id="src-list" onchange="updTplSrcCols(this,${ti},'lookup')"><option value="">Select list</option>${mls.map(m=>`<option value="${m.tempId}">${m.icon||''} ${m.name}</option>`).join('')}</select></div><div class="fg" style="margin:0"><label>Display column</label><select id="src-col"><option value="">Select list first</option></select></div></div>`;
+  }else if(type==='auto-fill'){
+    wrap.style.display='block';
+    if(!mls.length){wrap.innerHTML=`<div class="hint" style="color:var(--amber)">&#9888; Add a master list to this package first (above).</div>`;return;}
+    const lookupFields=(tpl.register?.fields||[]).filter(f=>f.t==='master-lookup');
+    wrap.innerHTML=`<div class="fg2"><div class="fg" style="margin:0"><label>Source list (in this package)</label><select id="src-list" onchange="updTplSrcCols(this,${ti},'autofill')"><option value="">Select list</option>${mls.map(m=>`<option value="${m.tempId}">${m.icon||''} ${m.name}</option>`).join('')}</select></div><div class="fg" style="margin:0"><label>Column to fill</label><select id="src-fill-col"><option value="">Select list first</option></select></div></div>
+    <div class="fg" style="margin-top:8px"><label>Triggered when</label><select id="src-depends">${lookupFields.map(f=>`<option value="${f.n}">${f.n}</option>`).join('')||'<option value="">No lookup fields yet</option>'}</select></div>`;
+  }else{wrap.style.display='none';wrap.innerHTML='';}
+};
+
 window.updSrcCols=function(sel,ri,mode){const mlId=sel.value,ml=(_mls[CU.companyId]||[]).find(m=>m.id===mlId);if(!ml)return;const cols=(ml.columns||[]).map(c=>`<option value="${c.n}">${c.n}</option>`).join('');const el=g(mode==='lookup'?'src-col':'src-fill-col');if(el)el.innerHTML=cols;};
+
+window.updTplSrcCols=function(sel,ti,mode){
+  const tempId=sel.value,tpl=_templates[ti],ml=(tpl.masterLists||[]).find(m=>m.tempId===tempId);if(!ml)return;
+  const cols=(ml.columns||[]).map(c=>`<option value="${c.n}">${c.n}</option>`).join('');
+  const el=g(mode==='lookup'?'src-col':'src-fill-col');if(el)el.innerHTML=cols;
+};
 
 window.renderNewCols=function(){const w=g('col-list');if(!w)return;w.innerHTML=(window._newCols||[]).map((c,i)=>`<div class="fi" style="margin-bottom:5px"><span class="fi-name">${c}</span><button class="btn-del" onclick="_newCols.splice(${i},1);renderNewCols()">&#x2715;</button></div>`).join('')||'<div style="font-size:12px;color:var(--g400);margin-bottom:4px">No columns yet</div>';};
 
